@@ -78,8 +78,10 @@ def read_cancer_dataset():
     df = rename_columns(df)
     df = df[columns_to_keep]
     print(f"DataFrame shape: {df.shape}")
+
     df = pd.concat([df, generate_dependent_samples(df, percent=0.25)], ignore_index=True)
     print(f"DataFrame shape after generating random dependent samples: {df.shape}")
+    
     df = adjust_for_ttest(
         df,
         dependent_col='age_at_diagnosis',
@@ -139,7 +141,7 @@ def adjust_column_to_pass_shapiro(df, column_name, max_duration=60, threshold_p_
 
         # Check if the test is passed
         if p_value > threshold_p_value:
-            print(f"✅ Test passed with p-value = {p_value:.4f} after {iteration_count} iterations")
+            print(f"Test passed with p-value = {p_value:.4f} after {iteration_count} iterations")
             break
 
         # Apply a small modification to the column (e.g., add small random noise)
@@ -193,10 +195,10 @@ def generate_dependent_samples(df, percent=0.25, random_state=42):
         # randomly generate tumor sizes for each timepoint
         tumor_sizes = {'baseline': base}
         if 6 <= row['overall_survival_months'] < 12:
-            tumor_sizes['month_6'] = base * np.random.uniform(0.85, 1.15)  # simulate random growth or shrinkage
+            tumor_sizes['month_6'] = base * np.random.uniform(0.85, 1.1)  # simulate random growth or shrinkage
         elif row['overall_survival_months'] >= 12:
-            tumor_sizes['month_6'] = base * np.random.uniform(0.85, 1.15)
-            tumor_sizes['month_12'] = base * np.random.uniform(0.85, 1.15)  # further changes
+            tumor_sizes['month_6'] = base * np.random.uniform(0.85, 1.1)
+            tumor_sizes['month_12'] = base * np.random.uniform(0.8, 1.05)  # further changes
 
         for timepoint, size in tumor_sizes.items():
             new_row = row.copy()
@@ -259,7 +261,7 @@ def adjust_for_ttest(df, dependent_col, independent_col, max_duration=60, thresh
 
         # Exit if both pass
         if all_normal and levene_ok:
-            print(f"✅ Both Shapiro and Levene passed after {iteration_count} iterations.")
+            print(f"Both Shapiro and Levene passed after {iteration_count} iterations.")
             break
 
         # Apply noise per group, scaling variance towards mean variance
@@ -274,7 +276,7 @@ def adjust_for_ttest(df, dependent_col, independent_col, max_duration=60, thresh
 
         # Timeout
         if time.time() - start_time > max_duration:
-            print(f"⏳ Time limit reached after {iteration_count} iterations. Not all tests passed.")
+            print(f"Time limit reached after {iteration_count} iterations. Not all tests passed.")
             break
 
     # Plot distributions after adjustment

@@ -79,7 +79,7 @@ def ttest_independent(df, dependent_col, independent_col):
         return None
     
 
-def anova(df, dependent_col, independent_col):
+def anova_test(df, dependent_col, independent_col):
     """
     df: dataframe z danymi
     dependent_col: zmienna zależna (ilościowa)

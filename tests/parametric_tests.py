@@ -95,6 +95,7 @@ def anova_test(df, dependent_col, independent_col):
 
     # preparing groups for ANOVA
     data_groups = []
+    shapiro_ps = []
     print(f"Shapiro-Wilk Test (normality within groups):")
     for group in groups:
         group_data = df[df[independent_col] == group][dependent_col].dropna()
@@ -103,14 +104,18 @@ def anova_test(df, dependent_col, independent_col):
             continue
         data_groups.append(group_data)
         stat, p = stats.shapiro(group_data)
+        shapiro_ps.append(p)
         print(f"- {group}: p={p:.4f} {'Normal' if p > 0.05 else 'Not normal'}")
 
     # Step 2: Levene's test (homogeneity of variances)
     levene_stat, levene_p = stats.levene(*data_groups)
     print(f"Levene's Test (homogeneity of variances): p={levene_p:.4f} {'Homogeneous' if levene_p > 0.05 else 'Not homogeneous'}")
-
     # Perform ANOVA only if all assumptions are satisfied
-    if all([levene_p > 0.05]):
+    trouble_shapiro = False
+    for p in shapiro_ps:
+        if p < 0.05:
+            trouble_shapiro = True
+    if all([levene_p > 0.05]) and not trouble_shapiro:
         f_stat, p_value = stats.f_oneway(*data_groups)
         print(f"\nANOVA Test (one-way) results:")
         print(tabulate(
@@ -128,3 +133,4 @@ def anova_test(df, dependent_col, independent_col):
     else:
         print("\nANOVA cannot be performed as one or more assumptions are not satisfied.")
         return None
+    

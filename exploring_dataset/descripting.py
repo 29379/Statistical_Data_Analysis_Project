@@ -1,35 +1,33 @@
 import pandas as pd
 
 def descriptive_statistics(df):
-    opis = {}
-
     numerical_statistics = {}
     numerical_variables = df.select_dtypes(include=['number']).columns
     for col in numerical_variables:
         numerical_statistics[col] = {
-            'typ': 'ilościowa (numeryczna)',
-            'count': df[col].count(),
-            'mean': df[col].mean(),
-            'std': df[col].std(),
-            'min': df[col].min(),
-            '25%': df[col].quantile(0.25),
-            '50% (median)': df[col].median(),
-            '75%': df[col].quantile(0.75),
-            'max': df[col].max(),
-            'skewness': df[col].skew(),
-            'kurtosis': df[col].kurtosis()
+            'type': 'ilościowa (numeryczna)',
+            'count': round(df[col].count(), 2),
+            'mean': round(df[col].mean(), 2),
+            'std': round(df[col].std(), 2),
+            'min': round(df[col].min(), 2),
+            '25%': round(df[col].quantile(0.25), 2),
+            '50% (median)': round(df[col].median(), 2),
+            '75%': round(df[col].quantile(0.75), 2),
+            'max': round(df[col].max(), 2),
+            'skewness': round(df[col].skew(), 2),
+            'kurtosis': round(df[col].kurtosis(), 2)
         }
-    
+
     categorical_statistics = {}
     categorical_values = df.select_dtypes(include=['object', 'category', 'bool']).columns
     for col in categorical_values:
         categorical_statistics[col] = {
-            'typ': 'kategoryczna (nominalna/porządkowa)',
-            'count': df[col].count(),
-            'unique': df[col].nunique(),
+            'type': 'kategoryczna (nominalna/porządkowa)',
+            'count': round(df[col].count(), 2), 
+            'unique': round(df[col].nunique(), 2),  
             'top (najczęstsza)': df[col].mode()[0] if not df[col].mode().empty else None,
-            'freq (liczba najczęstszej)': df[col].value_counts().iloc[0] if not df[col].value_counts().empty else None,
-            'value_counts': df[col].value_counts().to_dict()
+            'freq (liczba najczęstszej)': round(df[col].value_counts().iloc[0], 2) if not df[col].value_counts().empty else None,
+            'value_counts': {k: round(v, 2) for k, v in df[col].value_counts().to_dict().items()} 
         }
     
     print("Numerical Statistics:")

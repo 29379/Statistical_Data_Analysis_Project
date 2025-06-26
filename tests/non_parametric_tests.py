@@ -46,6 +46,8 @@ def wilcoxon_test(df, subject_col, dependent_col, timepoint_col, timepoint1, tim
         print("Reject the null hypothesis: significant difference between timepoints.")
     else:
         print("Fail to reject the null hypothesis: no significant difference between timepoints.")
+    pivoted['diff'] = pivoted['month_6'] - pivoted['baseline']
+    print(f"Median difference: {pivoted['diff'].median()}") 
     
     return {
         'n_pairs': len(pivoted),
@@ -92,35 +94,32 @@ def friedman_test(df, subject_col, dependent_col, timepoint_col, timepoints, alp
     }
 
     if p_value < alpha:
-        print("H-0 rejected: performing Bonferroni-Dunn post-hoc test.")
+        print("H-0 rejected: performing Nemenyi post-hoc test.")
         long_df = pivoted.reset_index().melt(
             id_vars=subject_col,
             value_vars=timepoints,
             var_name='timepoint',
             value_name='value'
         )
-        long_df['value'] = pd.to_numeric(long_df['value'], errors='coerce')
-        long_df = long_df.dropna(subset=['value'])
-        long_df[subject_col] = long_df[subject_col].astype(str)
-        long_df['timepoint'] = long_df['timepoint'].astype(str)
-
-        bonferroni_dunn_result = sp.posthoc_dunn(
-            long_df,
-            val_col='value',
-            group_col='timepoint',
-            p_adjust='bonferroni',
+        long_df = pivoted.reset_index().melt(
+            id_vars=subject_col,
+            value_vars=timepoints,
+            var_name='timepoint',
+            value_name='value'
         )
-        
-        print("Bonferroni-Dunn post-hoc p-values:")
+        nemenyi_result = sp.posthoc_nemenyi_friedman(pivoted[timepoints]) # timepoint as group, subject_id as individual
+
+        print("Nemenyi post-hoc p-values:")
         print(tabulate(
-            bonferroni_dunn_result,
-            headers=bonferroni_dunn_result.columns,
+            nemenyi_result,
+            headers=nemenyi_result.columns,
             showindex=True,
             tablefmt="grid",
             floatfmt=".4f"
         ))
-        friedman_results['posthoc'] = bonferroni_dunn_result
-        plot_visualizations(long_df, bonferroni_dunn_result, dependent_col)
+
+        friedman_results['posthoc'] = nemenyi_result
+        plot_visualizations(long_df, nemenyi_result, dependent_col)
     else:
         print("H-0 not rejected: no significant difference detected. No need for post-hoc tests.")
 

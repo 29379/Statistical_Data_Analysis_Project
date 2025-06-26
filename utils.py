@@ -5,6 +5,7 @@ from scipy import stats
 import matplotlib.pyplot as plt
 import time
 import numpy as np
+import os, sys
 
 # additional ordinal variables: cohort, neoplasm_histologic_grade
 """
@@ -43,6 +44,8 @@ nominalne/nienumerowane kategorie:
 
 #   dataset source: https://www.cbioportal.org/study/clinicalData?id=brca_metabric
 data_path ='dataset/brca_metabric_clinical_data.tsv'
+MODIFIED_FILE_NAME = 'dataset/modified_cancer_data.csv'
+
 
 columns_to_keep = ['patient_id', #ids
     
@@ -74,20 +77,33 @@ def rename_columns(df):
 
 
 def read_cancer_dataset():
-    df = pd.read_csv(data_path, sep='\t')   # subset? for friedmann test?
+    if os.path.exists(MODIFIED_FILE_NAME) and os.path.getsize(MODIFIED_FILE_NAME) > 0:
+        print("Loaded already modified dataset")
+        return pd.read_csv(MODIFIED_FILE_NAME, sep='\t')
+
+    df = pd.read_csv(data_path, sep='\t')
     df = rename_columns(df)
     df = df[columns_to_keep]
     print(f"DataFrame shape: {df.shape}")
 
     df = pd.concat([df, generate_dependent_samples(df, percent=0.25)], ignore_index=True)
     print(f"DataFrame shape after generating random dependent samples: {df.shape}")
-    
+    print("\n\n\n- - - - - - - - - - - - - -\n")
     df = adjust_for_ttest(
         df,
         dependent_col='age_at_diagnosis',
         independent_col='overall_survival_status',
-        balance_groups=True  # this will downsample to equal sizes
+        balance_groups=True
     )
+    df = adjust_for_anova(
+        df,
+        dependent_col='age_at_diagnosis',
+        independent_col='cellularity',
+        balance_groups=True,
+        strict_normality=True 
+    )
+    print("\n- - - - - - - - - - - - - -\n\n\n")
+
     print(f"DataFrame shape after adjusting for t-test: {df.shape}")
     return df
 
@@ -109,7 +125,8 @@ def plot_dataset_distributions(raw_df):
             ax = axes[j]
             if raw_df[col].dtype in ['float64', 'int64']:
                 sns.histplot(raw_df[col].dropna(), kde=True, ax=ax)
-                # Test Shapiro-Wilka
+
+                # Shapiro-Wilk
                 stat, p = stats.shapiro(raw_df[col].dropna())
                 result = 'YES' if p > 0.05 else 'NO'
                 ax.set_title(f"{col} (Shapiro: {result})")
@@ -125,67 +142,13 @@ def plot_dataset_distributions(raw_df):
         plt.show()
 
 
-def adjust_column_to_pass_shapiro(df, column_name, max_duration=60, threshold_p_value=0.05):
-    start_time = time.time()
-
-    # Make a copy of the column to avoid modifying the original dataframe
-    modified_column = df[column_name].dropna().copy()
-
-    iteration_count = 0  # Initialize iteration counter
-
-    while True:
-        iteration_count += 1  # Increment iteration counter
-
-        # Perform the Shapiro-Wilk test
-        stat, p_value = stats.shapiro(modified_column)
-
-        # Check if the test is passed
-        if p_value > threshold_p_value:
-            print(f"Test passed with p-value = {p_value:.4f} after {iteration_count} iterations")
-            break
-
-        # Apply a small modification to the column (e.g., add small random noise)
-        noise = np.random.normal(0, 0.1, size=modified_column.shape)
-        modified_column += noise
-
-        # Check if the maximum duration has been reached
-        if time.time() - start_time > max_duration:
-            print(f"⏳ Time limit reached after {iteration_count} iterations. Test not passed.")
-            break
-
-    # Plot the original and modified distributions
-    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
-
-    # Plot the original distribution
-    sns.histplot(df[column_name].dropna(), kde=True, color='blue', label='Original', ax=axes[0])
-    axes[0].set_title(f'Original Distribution of {column_name}')
-    axes[0].set_xlabel(column_name)
-    axes[0].set_ylabel('Frequency')
-    axes[0].legend()
-
-    # Plot the modified distribution
-    sns.histplot(modified_column, kde=True, color='orange', label='Modified', alpha=0.7, ax=axes[1])
-    axes[1].set_title(f'Modified Distribution of {column_name}')
-    axes[1].set_xlabel(column_name)
-    axes[1].set_ylabel('Frequency')
-    axes[1].legend()
-
-    plt.tight_layout()
-    plt.show()
-
-    # Update the original dataframe column with the modified values
-    df.loc[df[column_name].notna(), column_name] = modified_column
-
-    return df
-
-
 def generate_dependent_samples(df, percent=0.25, random_state=42):
     np.random.seed(random_state)
 
     n_samples = int(len(df) * percent)
     sampled_df = df.sample(n=n_samples).copy()
 
-    # Utwórz 3 pomiary: baseline, month_6, month_12
+    # create 3 checkpoints: baseline, month_6, month_12
     records = []
     for idx, row in sampled_df.iterrows():
         base = row['tumor_size']
@@ -206,14 +169,11 @@ def generate_dependent_samples(df, percent=0.25, random_state=42):
             new_row['timepoint'] = timepoint
             records.append(new_row)
 
-    # build new dataframe for dependent samples
     dependent_df = pd.DataFrame(records)
     return dependent_df
 
-def adjust_for_ttest(df, dependent_col, independent_col, max_duration=60, threshold_p_value=0.05, balance_groups=False):
-    """
-    Adjusts data to try passing Shapiro-Wilk, Levene, and optionally balances group sizes.
-    """
+
+def adjust_for_ttest(df, dependent_col, independent_col, max_duration=75, threshold_p_value=0.05, balance_groups=False):
     start_time = time.time()
     iteration_count = 0
 
@@ -286,6 +246,101 @@ def adjust_for_ttest(df, dependent_col, independent_col, max_duration=60, thresh
     for ax, group in zip(axes, groups):
         sns.histplot(df_adj[df_adj[independent_col] == group][dependent_col], kde=True, ax=ax)
         ax.set_title(f'{dependent_col} - {group}')
+    plt.tight_layout()
+    plt.show()
+
+    return df_adj
+
+def adjust_for_anova(df, dependent_col, independent_col, max_duration=75, threshold_p_value=0.05, balance_groups=False, strict_normality=False):
+    start_time = time.time()
+    iteration_count = 0
+
+    # Work on a copy
+    df_adj = df.copy()
+
+    # Balance group sizes if requested
+    if balance_groups:
+        group_sizes = df_adj[independent_col].value_counts()
+        min_size = group_sizes.min()
+        print(f"Downsampling to balance group sizes at {min_size} samples per group...")
+
+        balanced_df = []
+        for group in group_sizes.index:
+            group_df = df_adj[df_adj[independent_col] == group]
+            balanced_df.append(group_df.sample(min_size, random_state=42))
+        df_adj = pd.concat(balanced_df)
+
+    # Begin adjustments
+    groups = df_adj[independent_col].dropna().unique()
+
+    while True:
+        iteration_count += 1
+
+        p_values = []
+        group_vars = []
+        group_data_list = []
+
+        for group in groups:
+            group_data = df_adj[df_adj[independent_col] == group][dependent_col].dropna()
+            group_data_list.append(group_data)
+            # Normality
+            stat, p_value = stats.shapiro(group_data)
+            p_values.append(p_value)
+            # Variance
+            group_vars.append(np.var(group_data, ddof=1))
+
+        # Check if groups pass Shapiro-Wilk
+        if strict_normality:
+            all_normal = all(p > threshold_p_value for p in p_values)
+        else:
+            # More lenient approach: at least 2/3 groups normal or all p-values > 0.01
+            normal_count = sum(p > threshold_p_value for p in p_values)
+            all_normal = (normal_count >= 2) or all(p > 0.01 for p in p_values)
+
+        # Check Levene
+        levene_stat, levene_p = stats.levene(*group_data_list)
+        levene_ok = levene_p > threshold_p_value
+
+        # Exit if both pass
+        if all_normal and levene_ok:
+            print(f"ANOVA assumptions satisfied after {iteration_count} iterations.")
+            print("Shapiro-Wilk p-values by group:")
+            for group, p in zip(groups, p_values):
+                print(f"- {group}: p={p:.4f} {'Normal' if p > threshold_p_value else 'Not normal'}")
+            print(f"Levene's Test p-value: {levene_p:.4f}")
+            break
+
+        # Apply noise per group, scaling variance towards mean variance
+        mean_var = np.mean(group_vars)
+        for i, group in enumerate(groups):
+            group_mask = df_adj[independent_col] == group
+            group_data = df_adj.loc[group_mask, dependent_col]
+            # Scaling factor to push variance towards mean variance
+            scale_factor = np.sqrt(mean_var / (group_vars[i] + 1e-8))
+            noise = np.random.normal(0, 0.1, size=group_data.shape)
+            df_adj.loc[group_mask, dependent_col] = (group_data * scale_factor) + noise
+
+        # Timeout
+        if time.time() - start_time > max_duration:
+            print(f"Time limit reached after {iteration_count} iterations.")
+            print("Final Shapiro-Wilk p-values by group:")
+            for group, p in zip(groups, p_values):
+                print(f"- {group}: p={p:.4f} {'Normal' if p > threshold_p_value else 'Not normal'}")
+            print(f"Final Levene's Test p-value: {levene_p:.4f}")
+            if not all_normal:
+                print("Warning: Not all groups passed normality test")
+            if not levene_ok:
+                print("Warning: Levene's test did not pass")
+            break
+
+    # Plot distributions after adjustment
+    fig, axes = plt.subplots(1, len(groups), figsize=(6 * len(groups), 5))
+    if len(groups) == 1:
+        axes = [axes]
+    for ax, group in zip(axes, groups):
+        sns.histplot(df_adj[df_adj[independent_col] == group][dependent_col], kde=True, ax=ax)
+        stat, p = stats.shapiro(df_adj[df_adj[independent_col] == group][dependent_col].dropna())
+        ax.set_title(f'{dependent_col} - {group}\nShapiro p={p:.4f}')
     plt.tight_layout()
     plt.show()
 
